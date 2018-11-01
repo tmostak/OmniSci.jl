@@ -3,7 +3,7 @@ mutable struct OmniSciConnection
     c::MapDClient
 end
 
-#For functions below, value for is_null should be known based on the dispatched type
+#For TStringValue, value for is_null should be known based on the dispatched type
 #Left as keyword just in case my assumption incorrect
 function TStringValue(str_val::Rational, is_null::Bool = false)
   val = OmniSci.TStringValue()
@@ -33,8 +33,76 @@ function TStringRow(cols::Vector{TStringValue})
 end
 
 TStringRow(cols::AbstractVector) = TStringRow(TStringValue.(cols))
-
 TStringRow(x::DataFrameRow{DataFrame}) = TStringRow(vec(convert(Array, x)))
+
+#TDatum used for load_table_binary to create TRow
+function TDatum(datum::T) where T <: Union{Int8, Int16, Int32, Int64}
+  #Create the internally needed TDatumVal
+  val = OmniSci.TDatumVal()
+  Thrift.set_field!(val, :int_val, Int64(datum))
+  Thrift.fillunset(val, :real_val)
+
+  td = OmniSci.TDatum()
+  Thrift.set_field!(td, :val, val)
+  Thrift.set_field!(td, :is_null, false)
+
+  return td
+
+end
+
+function TDatum(datum::T) where T <: Union{Float64, Float32, Float16, Rational}
+  #Create the internally needed TDatumVal
+  val = OmniSci.TDatumVal()
+  Thrift.set_field!(val, :real_val, Float64(datum))
+
+  td = OmniSci.TDatum()
+  Thrift.set_field!(td, :val, val)
+  Thrift.set_field!(td, :is_null, false)
+
+  return td
+
+end
+
+function TDatum(datum::String)
+  #Create the internally needed TDatumVal
+  val = OmniSci.TDatumVal()
+  Thrift.set_field!(val, :str_val, datum)
+  Thrift.fillunset(val, :real_val)
+
+
+  td = OmniSci.TDatum()
+  Thrift.set_field!(td, :val, val)
+  Thrift.set_field!(td, :is_null, false)
+
+  return td
+
+end
+
+function TDatum(datum::T) where T <: Union{Missing, Nothing}
+  #Unclear what the convention is for a missing value in TDatumVal
+  #Placing a value of typemin(Int64) in int until I know better
+  val = OmniSci.TDatumVal()
+  Thrift.set_field!(val, :int_val, typemin(Int64))
+  Thrift.fillunset(val, :real_val)
+
+  td = OmniSci.TDatum()
+  Thrift.set_field!(td, :val, val)
+  Thrift.set_field!(td, :is_null, true)
+
+  return td
+
+end
+
+function TRow(cols::Vector{TDatum})
+
+    tr = TRow()
+    Thrift.set_field!(tr, :cols, cols)
+
+    return tr
+
+end
+
+TRow(x::DataFrameRow{DataFrame}) = TRow(TDatum.(vec(convert(Array, x))))
 
 #REPL display; show method for Juno uses inline tree display
 Base.show(io::IO, ::MIME"text/plain", m::OmniSciConnection) = println(io, "Connected to $(m.c.p.t.host):$(m.c.p.t.port)")
